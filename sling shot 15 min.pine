@@ -1,0 +1,418 @@
+//@version=5
+strategy("Sling Shot 15min", overlay=true, pyramiding=0)
+
+// --- Ticker Symbol Input ---
+tickerSymbol = input.string("EURNZD", title="Ticker Symbol", tooltip="Enter the ticker symbol for alerts (e.g., EURNZD, EURUSD, GBPUSD, SPX, XAUUSD)")
+
+// --- Pip Size Input ---
+pipSize = input.float(0.0001, title="Pip Size", tooltip="Define the pip size based on the asset type (e.g., 0.0001 for Forex, 1 for Indices, 0.01 for Commodities)")
+
+// --- Position Sizing for Percentage Risk ---
+riskPercentage = input.float(1.0, "Risk Percentage per Trade", minval=0.1, maxval=100, step=0.1)
+
+// --- Contract Size Input ---
+contractSize = input.float(1.0, title="Contract Size", tooltip="Enter the contract size as defined in your strategy input tabs")
+
+// --- Initial Stop Loss Percentage Below EMA200 ---
+initial_stop_loss_percent = input.float(0.03, "Initial Stop Loss Percentage Below EMA200 (%)", minval=0.0, step=0.01, tooltip="Set the initial stop loss percentage below the EMA200. Default is 0.03%.")
+
+// --- Configurable Trading Windows (Hours + Minutes) ---
+start_hour_1   = input.int(7,  title="Start Hour for Session 1 (0-23)",  minval=0, maxval=23)
+start_minute_1 = input.int(0,  title="Start Minute for Session 1 (0-59)", minval=0, maxval=59)
+end_hour_1     = input.int(13, title="End Hour for Session 1 (0-23)",    minval=0, maxval=23)
+end_minute_1   = input.int(0,  title="End Minute for Session 1 (0-59)",  minval=0, maxval=59)
+
+start_hour_2   = input.int(17, title="Start Hour for Session 2 (0-23)",  minval=0, maxval=23)
+start_minute_2 = input.int(0,  title="Start Minute for Session 2 (0-59)", minval=0, maxval=59)
+end_hour_2     = input.int(21, title="End Hour for Session 2 (0-23)",    minval=0, maxval=23)
+end_minute_2   = input.int(0,  title="End Minute for Session 2 (0-59)",  minval=0, maxval=59)
+
+// --- Maximum Trades per Trading Window ---
+max_trades_per_window = input.int(2, "Max Trades per Trading Window", minval=1)
+
+// --- Determine if Current Time is Within Any Trading Window ---
+current_hour = hour(time)
+current_min  = minute(time)
+time_in_minutes = current_hour * 60 + current_min
+
+start_session_1 = start_hour_1 * 60 + start_minute_1
+end_session_1   = end_hour_1   * 60 + end_minute_1
+start_session_2 = start_hour_2 * 60 + start_minute_2
+end_session_2   = end_hour_2   * 60 + end_minute_2
+
+in_session_1 = (time_in_minutes >= start_session_1) and (time_in_minutes < end_session_1)
+in_session_2 = (time_in_minutes >= start_session_2) and (time_in_minutes < end_session_2)
+in_trading_window = in_session_1 or in_session_2
+
+// --- Plot Background for Trading Windows ---
+bgcolor(in_trading_window ? color.new(color.green, 90) : na, title="Trading Window Background")
+
+// --- Variables to Track Trades per Window ---
+var int  trade_count_in_window   = 0
+var bool prev_in_trading_window = false
+
+// --- Reset Trade Count at Start of New Trading Window ---
+if in_trading_window and not prev_in_trading_window
+    trade_count_in_window := 0
+
+prev_in_trading_window := in_trading_window
+
+// --- Daily Timeframe and Intraday Variables ---
+daily_timeframe   = "D"
+min1_timeframe    = "1"
+
+// --- EMA Calculations for Current Timeframe ---
+ema10   = ta.ema(close, 10)
+ema20   = ta.ema(close, 20)
+ema50   = ta.ema(close, 50)
+ema100  = ta.ema(close, 100)
+ema200  = ta.ema(close, 200)
+
+// Plot all EMAs
+plot(ema10,   title="EMA 10",  color=color.blue,   linewidth=2)
+plot(ema20,   title="EMA 20",  color=color.red,    linewidth=2)
+plot(ema50,   title="EMA 50",  color=color.gray,   linewidth=2)
+plot(ema100,  title="EMA 100", color=color.purple, linewidth=2)
+plot(ema200,  title="EMA 200", color=color.orange, linewidth=2)
+
+// --- Real-Time Daily Data and EMAs ---
+realTimeEMA10 = request.security(syminfo.tickerid, daily_timeframe, ta.ema(close, 10), lookahead=barmerge.lookahead_on)
+realTimeEMA20 = request.security(syminfo.tickerid, daily_timeframe, ta.ema(close, 20), lookahead=barmerge.lookahead_on)
+daily_open_now = request.security(syminfo.tickerid, daily_timeframe, open, lookahead=barmerge.lookahead_on)
+
+// New condition: Check if current day's open is below realTimeEMA10 and above realTimeEMA20
+dailyOpenCondition = (daily_open_now < realTimeEMA10) and (daily_open_now > realTimeEMA20)
+
+// *** NEW: Compute daily 20 EMA for lower timeframe label filtering ***
+dailyEMA20_lower = request.security(syminfo.tickerid, daily_timeframe, ta.ema(close, 20), lookahead=barmerge.lookahead_off)
+priceAboveDaily20 = close > dailyEMA20_lower
+
+// ---------------------------------------------------------------------
+// *** ADDED: DAILY PIVOT LOGIC ***
+prevDailyHigh  = request.security(syminfo.tickerid, "D", high[1],  lookahead=barmerge.lookahead_on)
+prevDailyLow   = request.security(syminfo.tickerid, "D", low[1],   lookahead=barmerge.lookahead_on)
+prevDailyClose = request.security(syminfo.tickerid, "D", close[1], lookahead=barmerge.lookahead_on)
+
+// Calculate daily pivot, R1, and S1
+pivotLevel = (prevDailyHigh + prevDailyLow + prevDailyClose) / 3
+r1_level   = 2 * pivotLevel - prevDailyLow
+s1_level   = 2 * pivotLevel - prevDailyHigh
+
+// Plot them if you want to see them on the chart
+plot(pivotLevel, title="Daily Pivot", color=color.white,  style=plot.style_line, linewidth=1)
+plot(r1_level,   title="Daily R1",    color=color.red,    style=plot.style_line, linewidth=1)
+plot(s1_level,   title="Daily S1",    color=color.green,  style=plot.style_line, linewidth=1)
+// ---------------------------------------------------------------------
+
+// --- Daily Confirmation Logic ---
+daily_close      = request.security(syminfo.tickerid, daily_timeframe, close)
+daily_high       = request.security(syminfo.tickerid, daily_timeframe, high)
+daily_low        = request.security(syminfo.tickerid, daily_timeframe, low)
+daily_prev_close = request.security(syminfo.tickerid, daily_timeframe, close[1])
+daily_prev_open  = request.security(syminfo.tickerid, daily_timeframe, open[1])
+
+ema10_daily  = request.security(syminfo.tickerid, daily_timeframe, ta.ema(close, 10))
+ema20_daily  = request.security(syminfo.tickerid, daily_timeframe, ta.ema(close, 20))
+ema50_daily  = request.security(syminfo.tickerid, daily_timeframe, ta.ema(close, 50))
+ema100_daily = request.security(syminfo.tickerid, daily_timeframe, ta.ema(close, 100))
+ema200_daily = request.security(syminfo.tickerid, daily_timeframe, ta.ema(close, 200))
+
+// For daily 10 > 20 > 200 (original core condition)
+emas_aligned_daily = (ema10_daily > ema20_daily) and (ema20_daily > ema200_daily)
+
+// "Strict" bullish daily bar
+bool current_bullish = (daily_close > daily_open_now) and (daily_close > ema10_daily) and (daily_open_now > ema20_daily)
+
+// Basic "previous" checks
+bool previous_bearish      = (daily_prev_close < daily_prev_open)
+bool previous_condition_met = previous_bearish and (daily_prev_open < daily_close)
+
+// Persistent flags
+var bool dailyConfirmed          = false
+var bool prev_day_bullish_status = false
+
+// Tracks the open price of the LAST green DEA1 bar
+var float lastDEA1GreenOpen = na
+
+long_signal = false
+
+if timeframe.isdaily and barstate.isconfirmed
+    // Overall requirement for daily EMA alignment only:
+    bool fullBullCondition_local = emas_aligned_daily
+
+    // 1) Original "Green" trigger: strictly bullish daily bar
+    bool greenTrigger = current_bullish and (not previous_bearish or previous_condition_met) and fullBullCondition_local
+
+    // 2) "Red" trigger: bar is red but closes above last green DEA1 open
+    bool redTrigger = (daily_close < daily_open_now) and not na(lastDEA1GreenOpen) and (daily_close > lastDEA1GreenOpen) and fullBullCondition_local
+
+    // 3) Alternate green fallback: even if it fails the strict logic,
+    //    if the bar is green and stays above lastDEA1GreenOpen, it still qualifies.
+    bool altGreenTrigger = (daily_close > daily_open_now) and not greenTrigger and not na(lastDEA1GreenOpen) and (daily_close > lastDEA1GreenOpen) and fullBullCondition_local
+
+    if greenTrigger
+        dailyConfirmed := true
+        label.new(bar_index, daily_high, "DEA1", color=color.blue, textcolor=color.white, style=label.style_label_up)
+        lastDEA1GreenOpen := daily_open_now
+        long_signal := true
+    else if redTrigger
+        dailyConfirmed := true
+        label.new(bar_index, daily_high, "DEA1", color=color.blue, textcolor=color.white, style=label.style_label_up)
+        long_signal := true
+    else if altGreenTrigger
+        dailyConfirmed := true
+        label.new(bar_index, daily_high, "DEA1", color=color.blue, textcolor=color.white, style=label.style_label_up)
+        lastDEA1GreenOpen := daily_open_now
+        long_signal := true
+    else
+        dailyConfirmed := false
+
+    prev_day_bullish_status := fullBullCondition_local
+else
+    // On non-daily bars, carry forward dailyConfirmed from the previous bar
+    dailyConfirmed          := dailyConfirmed[1]
+    prev_day_bullish_status := prev_day_bullish_status[1]
+
+// --- Pass Variables to Lower Timeframes for 15min ---
+dailyConfirmed_15min  = request.security(syminfo.tickerid, daily_timeframe, dailyConfirmed ? 1 : 0, lookahead=barmerge.lookahead_off) == 1
+prev_day_bullish_status_15min  = request.security(syminfo.tickerid, daily_timeframe, prev_day_bullish_status ? 1 : 0, lookahead=barmerge.lookahead_off) == 1
+emas_aligned_daily_10_20_200_15min  = request.security(syminfo.tickerid, daily_timeframe, emas_aligned_daily ? 1 : 0, lookahead=barmerge.lookahead_off) == 1
+
+// --- Define a function to calculate fullBullCondition on a daily basis ---
+fullBullCondition() =>
+    // Now only check for daily EMA alignment
+    request.security(syminfo.tickerid, daily_timeframe, (ema10_daily > ema20_daily) and (ema20_daily > ema200_daily) ? 1 : 0, lookahead=barmerge.lookahead_off) == 1
+
+// Compute a global variable for full bullish condition
+bool isFullBull = fullBullCondition()
+
+// --- Price Cross Below Daily EMA10/EMA20 on 15-Minute ---
+ema10_daily_15min = request.security(syminfo.tickerid, daily_timeframe, ta.ema(close, 10), lookahead=barmerge.lookahead_on)
+ema20_daily_15min = request.security(syminfo.tickerid, daily_timeframe, ta.ema(close, 20), lookahead=barmerge.lookahead_on)
+
+price_crossed_below_ema10_daily_15min = ta.crossunder(close, ema10_daily_15min)
+price_crossed_below_ema20_daily_15min = ta.crossunder(close, ema20_daily_15min)
+
+var bool crossed_below_daily_ema10_today_15min = false
+newDay_15min = ta.change(time("D")) != 0
+if newDay_15min
+    crossed_below_daily_ema10_today_15min := false
+if (price_crossed_below_ema10_daily_15min or price_crossed_below_ema20_daily_15min) and fullBullCondition()
+    crossed_below_daily_ema10_today_15min := true
+
+// --- Price Action Management Tool Integration ---
+selectedTimeframe_PA = input.timeframe("15", title="Select Timeframe for Price Action", options=["1", "15", "10", "60", "240", "D"], tooltip="Choose the timeframe for price action calculations (1m, 15m, 1H, 4H, Daily)")
+price_action_adjustment_percent = input.float(0.0, "Price Action Line Adjustment (%)", minval=-100, maxval=100, step=0.1, tooltip="Adjust the Price Action Line up or down by a percentage. Positive values move it up, negative values move it down.")
+
+isGreen_PA(candleClose, candleOpen) =>
+    candleClose > candleOpen
+
+priceActionLine_HTF() =>
+    var float base_priceActionLine = na
+    if barstate.isconfirmed
+        if isGreen_PA(close, open)
+            if close > high[1]
+                base_priceActionLine := low
+            else if (close > open[1]) and (close[1] < open[1])
+                base_priceActionLine := low
+            else
+                base_priceActionLine := na
+        else
+            base_priceActionLine := na
+    base_priceActionLine
+
+priceActionLine_base = request.security(syminfo.tickerid, selectedTimeframe_PA, priceActionLine_HTF(), lookahead=barmerge.lookahead_off)
+priceActionLine = not na(priceActionLine_base) ? priceActionLine_base * (1 + price_action_adjustment_percent / 100) : na
+plot(priceActionLine, color=color.green, title="Price Action Line", linewidth=2, style=plot.style_line)
+
+// --- 15minRE Logic ---
+var label debug_label_15minRE = na
+
+ema10_15min  = ta.ema(close, 10)
+ema20_15min  = ta.ema(close, 20)
+ema50_15min  = ta.ema(close, 50)
+ema100_15min = ta.ema(close, 100)
+ema200_15min = ta.ema(close, 200)
+
+emas_aligned_15min = (ema10_15min > ema20_15min) and (ema20_15min > ema50_15min) and (ema20_15min > ema100_15min) and (ema20_15min > ema200_15min)
+priceAboveEMA10_15min   = close > ema10_15min
+isBullishCandle_15min   = close > open
+priceCrossedEMA10_15min = (low <= ema10_15min) and (high >= ema10_15min)
+resetCondition_15min    = close < ema20_15min
+
+var bool waitForNextBullishCandle_15min  = false
+var bool waitingForPriceAboveEMA10_15min = false
+bearishSignal_15min = false
+
+if timeframe.isintraday and timeframe.multiplier == 15 and isFullBull and emas_aligned_15min and crossed_below_daily_ema10_today_15min and prev_day_bullish_status_15min and emas_aligned_daily_10_20_200_15min and in_trading_window
+    if resetCondition_15min
+        bearishSignal_15min := false
+        waitForNextBullishCandle_15min := false
+        waitingForPriceAboveEMA10_15min := true
+    else
+        if waitingForPriceAboveEMA10_15min
+            if priceAboveEMA10_15min
+                waitingForPriceAboveEMA10_15min := false
+            else
+                bearishSignal_15min := false
+                waitForNextBullishCandle_15min := false
+        else
+            if priceAboveEMA10_15min
+                if priceCrossedEMA10_15min
+                    if isBullishCandle_15min and barstate.isconfirmed
+                        bearishSignal_15min := true
+                        waitForNextBullishCandle_15min := false
+                    else
+                        waitForNextBullishCandle_15min := true
+                else
+                    if waitForNextBullishCandle_15min
+                        if isBullishCandle_15min and priceAboveEMA10_15min and barstate.isconfirmed
+                            bearishSignal_15min := true
+                            waitForNextBullishCandle_15min := false
+                        else
+                            waitForNextBullishCandle_15min := false
+            else
+                waitForNextBullishCandle_15min := false
+
+    prev_open_above_ema20_15min  = open[1] > ema20_15min[1]
+    prev_close_above_ema20_15min = close[1] > ema20_15min[1]
+    if bearishSignal_15min and prev_open_above_ema20_15min and prev_close_above_ema20_15min and priceAboveDaily20
+        label.new(bar_index, high + (high - low) * 0.5, "Long", color=color.red, textcolor=color.white, style=label.style_label_down)
+        long_signal := true
+
+// --- Updated EA Logic for 15-Minute ---
+if timeframe.isintraday and timeframe.multiplier == 15 and isFullBull and (dailyConfirmed_15min or dailyOpenCondition) and in_trading_window and close > ema20_daily and priceAboveDaily20
+    ema10_15min_EA  = ema10_15min
+    ema20_15min_EA  = ema20_15min
+    ema50_15min_EA  = ema50_15min
+    ema100_15min_EA = ema100_15min
+    ema200_15min_EA = ema200_15min
+
+    emas_aligned_15min_EA = (ema10_15min_EA > ema20_15min_EA) and (ema20_15min_EA > ema50_15min_EA) and (ema20_15min_EA > ema100_15min_EA) and (ema20_15min_EA > ema200_15min_EA)
+    priceAboveEMA10_15min_EA   = close > ema10_15min_EA
+    isBullishCandle_15min_EA   = close > open
+    priceCrossedEMA10_15min_EA = (low <= ema10_15min_EA) and (high >= ema10_15min_EA)
+
+    prev_open_above_ema20_15min_EA  = open[1] > ema20_15min[1]
+    prev_close_above_ema20_15min_EA = close[1] > ema20_15min[1]
+
+    if emas_aligned_15min_EA and priceAboveEMA10_15min_EA and priceCrossedEMA10_15min_EA and isBullishCandle_15min_EA and prev_open_above_ema20_15min_EA and prev_close_above_ema20_15min_EA and barstate.isconfirmed and priceAboveDaily20
+        label.new(bar_index, high + (high - low) * 0.5, "Long", color=color.blue, textcolor=color.white, style=label.style_label_up)
+        long_signal := true
+
+//---- Bullish Engulfing Indicator -----
+enableEma50  = input.bool(true,  "Enable EMA50 Engulfing")
+enableEma100 = input.bool(true,  "Enable EMA100 Engulfing")
+enableEma200 = input.bool(true,  "Enable EMA200 Engulfing")
+
+touchEma10or20 = (low <= ema10 and high >= ema10) or (low <= ema20 and high >= ema20)
+touchEma50or100or200 = ((enableEma50  and low <= ema50  and high >= ema50) or (enableEma100 and low <= ema100 and high >= ema100) or (enableEma200 and low <= ema200 and high >= ema200))
+
+prevBearish       = close[1] < open[1]
+currBullish       = close > open
+redBody           = math.abs(close[1] - open[1])
+greenBody         = math.abs(close - open)
+bodyGreenGreater  = greenBody > redBody
+bullishCondition  = prevBearish and currBullish and bodyGreenGreater
+
+conditionGreen = bullishCondition and 
+                 (ema10 > ema20 and ema20 > ema200) and 
+                 not((ema50 > ema200) and (ema100 > ema200)) and 
+                 touchEma10or20 and
+                 (close > ema10)
+
+conditionOrange = bullishCondition and 
+                  (ema10 > ema200 and ema20 > ema200 and ema50 > ema200 and ema100 > ema200) and 
+                  touchEma50or100or200
+
+isAllowedTF = (timeframe.period == "15")
+
+if isAllowedTF and in_trading_window and isFullBull and (dailyConfirmed_15min or dailyOpenCondition or crossed_below_daily_ema10_today_15min) and priceAboveDaily20 and (na(priceActionLine) or high > priceActionLine)
+    if conditionGreen
+        label.new(bar_index, high, 
+                  style     = label.style_label_down, 
+                  color     = color.new(color.green, 0), 
+                  textcolor = color.white,
+                  text      = "BG",
+                  size      = size.small)
+        long_signal := true
+    else if conditionOrange
+        label.new(bar_index, high, 
+                  style     = label.style_label_down, 
+                  color     = color.new(color.orange, 0), 
+                  textcolor = color.white,
+                  text      = "BG",
+                  size      = size.small)
+        long_signal := true
+
+if timeframe.isintraday and timeframe.multiplier == 15 and priceAboveDaily20
+    if price_crossed_below_ema10_daily_15min
+        label.new(bar_index, high, "Crossed Below", color=color.green, textcolor=color.white, style=label.style_label_down)
+
+// --- Strategy Execution ---
+var float fixed_stop_loss_level = na
+var float trailing_stop         = na
+var float stop_level            = na
+var bool  trailing_active       = false
+
+bool ema_order_15min = (ema10_15min > ema20_15min) and (ema20_15min > ema50_15min) and (ema50_15min > ema100_15min) and (ema100_15min > ema200_15min)
+
+if (long_signal and strategy.position_size <= 0 and in_trading_window and trade_count_in_window < max_trades_per_window)
+    // Use only the 15min EMA alignment condition to set the stop loss
+    if ema_order_15min
+        fixed_stop_loss_level := ema100_15min * (1 - initial_stop_loss_percent / 100)
+    else
+        fixed_stop_loss_level := ema200 * (1 - initial_stop_loss_percent / 100)
+    trailing_stop         := fixed_stop_loss_level
+    trailing_active       := false
+
+    distanceToStopLoss = math.abs(close - fixed_stop_loss_level)
+    distanceToStopLoss := distanceToStopLoss > 0 ? distanceToStopLoss : 0.0001
+    riskAmount   = 100000 * (riskPercentage / 100)
+    positionSize = riskAmount / distanceToStopLoss
+
+    volume = positionSize / contractSize
+
+    pipDistance       = distanceToStopLoss / pipSize
+    entryAlertMessage = "7766821208277,buy," + tickerSymbol + ",risk=" + str.tostring(volume)
+
+    strategy.entry("Long", strategy.long, qty=positionSize, alert_message=entryAlertMessage)
+    alert(entryAlertMessage, alert.freq_once_per_bar_close)
+    trade_count_in_window += 1
+
+if (strategy.position_size > 0)
+    bool pa_above_entry = not na(priceActionLine) and (priceActionLine > strategy.position_avg_price)
+
+    if (ema200 > strategy.position_avg_price)
+        if pa_above_entry
+            if not trailing_active
+                trailing_active := true
+                trailing_stop   := priceActionLine
+            else
+                trailing_stop := math.max(trailing_stop, priceActionLine)
+            stop_level := trailing_stop
+        else
+            stop_level := strategy.position_avg_price
+    else
+        if pa_above_entry
+            if not trailing_active
+                trailing_active := true
+                trailing_stop   := priceActionLine
+            else
+                trailing_stop := math.max(trailing_stop, priceActionLine)
+            stop_level := trailing_stop
+        else
+            stop_level := trailing_stop
+        
+    strategy.exit("Stop Loss", "Long", stop=stop_level, alert_message="7766821208277,closelong," + tickerSymbol)
+
+plot(strategy.position_size > 0 ? stop_level : na, title="Stop Loss", color=color.yellow, linewidth=2)
+
+var bool wasInPosition = false
+stop_triggered = wasInPosition and (strategy.position_size == 0) and (close <= stop_level)
+if stop_triggered
+    alert("Stop loss triggered for " + tickerSymbol, alert.freq_once_per_bar_close)
+
+wasInPosition := strategy.position_size > 0
+
+// --- End of Strategy ---
