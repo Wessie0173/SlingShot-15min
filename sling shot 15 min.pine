@@ -281,7 +281,8 @@ if timeframe.isintraday and timeframe.multiplier == 15 and isFullBull and emas_a
         long_signal := true
 
 // --- Updated EA Logic for 15-Minute ---
-if timeframe.isintraday and timeframe.multiplier == 15 and isFullBull and (dailyConfirmed_15min or dailyOpenCondition) and in_trading_window and close > ema20_daily and priceAboveDaily20
+// Removed dependency on dailyConfirmed/dailyOpenCondition so that trades can occur even without a DEA1 label
+if timeframe.isintraday and timeframe.multiplier == 15 and isFullBull and in_trading_window and close > ema20_daily and priceAboveDaily20
     ema10_15min_EA  = ema10_15min
     ema20_15min_EA  = ema20_15min
     ema50_15min_EA  = ema50_15min
@@ -327,7 +328,8 @@ conditionOrange = bullishCondition and
 
 isAllowedTF = (timeframe.period == "15")
 
-if isAllowedTF and in_trading_window and isFullBull and (dailyConfirmed_15min or dailyOpenCondition or crossed_below_daily_ema10_today_15min) and priceAboveDaily20 and (na(priceActionLine) or high > priceActionLine)
+// Removed dependency on dailyConfirmed, dailyOpenCondition, and crossed_below_daily_ema10_today_15min here as well
+if isAllowedTF and in_trading_window and isFullBull and priceAboveDaily20 and (na(priceActionLine) or high > priceActionLine)
     if conditionGreen
         label.new(bar_index, high, 
                   style     = label.style_label_down, 
