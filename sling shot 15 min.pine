@@ -96,59 +96,15 @@ priceActionLine_HTF() =>
 priceActionLine_base = request.security(syminfo.tickerid, selectedTimeframe_PA, priceActionLine_HTF(), lookahead=barmerge.lookahead_off)
 priceActionLine = not na(priceActionLine_base) ? priceActionLine_base * (1 + price_action_adjustment_percent / 100) : na
 plot(priceActionLine, color=color.green, title="Price Action Line", linewidth=2, style=plot.style_line)
-// --- 15minRE Logic ---
-var label debug_label_15minRE = na
 
+// --- 15minRE EMA Calculations ---
+// (Retaining only the EMA calculations for use in the EA logic; the red label logic has been removed)
 ema10_15min  = ta.ema(close, 10)
 ema20_15min  = ta.ema(close, 20)
 ema50_15min  = ta.ema(close, 50)
 ema100_15min = ta.ema(close, 100)
 ema200_15min = ta.ema(close, 200)
 
-emas_aligned_15min = (ema10_15min > ema20_15min) and (ema20_15min > ema50_15min) and (ema20_15min > ema100_15min) and (ema20_15min > ema200_15min)
-priceAboveEMA10_15min   = close > ema10_15min
-isBullishCandle_15min   = close > open
-priceCrossedEMA10_15min = (low <= ema10_15min) and (high >= ema10_15min)
-resetCondition_15min    = close < ema20_15min
-
-var bool waitForNextBullishCandle_15min  = false
-var bool waitingForPriceAboveEMA10_15min = false
-bearishSignal_15min = false
-
-if timeframe.isintraday and timeframe.multiplier == 15 and emas_aligned_15min and in_trading_window
-    if resetCondition_15min
-        bearishSignal_15min := false
-        waitForNextBullishCandle_15min := false
-        waitingForPriceAboveEMA10_15min := true
-    else
-        if waitingForPriceAboveEMA10_15min
-            if priceAboveEMA10_15min
-                waitingForPriceAboveEMA10_15min := false
-            else
-                bearishSignal_15min := false
-                waitForNextBullishCandle_15min := false
-        else
-            if priceAboveEMA10_15min
-                if priceCrossedEMA10_15min
-                    if isBullishCandle_15min and barstate.isconfirmed
-                        bearishSignal_15min := true
-                        waitForNextBullishCandle_15min := false
-                    else
-                        waitForNextBullishCandle_15min := true
-                else
-                    if waitForNextBullishCandle_15min
-                        if isBullishCandle_15min and priceAboveEMA10_15min and barstate.isconfirmed
-                            bearishSignal_15min := true
-                            waitForNextBullishCandle_15min := false
-                        else
-                            waitForNextBullishCandle_15min := false
-            else
-                waitForNextBullishCandle_15min := false
-    prev_open_above_ema20_15min  = open[1] > ema20_15min[1]
-    prev_close_above_ema20_15min = close[1] > ema20_15min[1]
-    if bearishSignal_15min and prev_open_above_ema20_15min and prev_close_above_ema20_15min
-        label.new(bar_index, high + (high - low) * 0.5, "Long", color=color.red, textcolor=color.white, style=label.style_label_down)
-        long_signal := true
 // --- Updated EA Logic for 15-Minute ---
 if timeframe.isintraday and timeframe.multiplier == 15 and in_trading_window
     ema10_15min_EA  = ema10_15min
