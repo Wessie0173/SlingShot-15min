@@ -176,7 +176,7 @@ if (long_signal and strategy.position_size <= 0 and in_trading_window and trade_
     // Apply stop loss rules in order:
     // 1. If the candle crosses the 200 EMA → use EMA200.
     // 2. Else if the candle crosses the 100 EMA (alone or with 50) → use EMA200.
-    // 3. Else if the candle crosses the 50 EMA → use EMA100.
+    // 3. Else if the candle crosses the 50 EMA → if EMA100 is above EMA50, use EMA200; otherwise, use EMA100.
     // 4. Else if the candle's wick touches the 20 EMA → use EMA50.
     // 5. Otherwise, use EMA20.
     if (cross200)
@@ -184,7 +184,7 @@ if (long_signal and strategy.position_size <= 0 and in_trading_window and trade_
     else if (cross100)
         fixed_stop_loss_level := ema200 * (1 - stop_loss_buffer_percent / 100)
     else if (cross50)
-        fixed_stop_loss_level := ema100 * (1 - stop_loss_buffer_percent / 100)
+        fixed_stop_loss_level := (ema100 > ema50) ? ema200 * (1 - stop_loss_buffer_percent / 100) : ema100 * (1 - stop_loss_buffer_percent / 100)
     else if (low <= ema20 and high >= ema20)
         fixed_stop_loss_level := ema50 * (1 - stop_loss_buffer_percent / 100)
     else
