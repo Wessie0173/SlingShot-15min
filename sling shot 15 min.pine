@@ -8,8 +8,9 @@ pipSize = input.float(0.0001, title="Pip Size", tooltip="Define the pip size bas
 riskPercentage = input.float(1.0, "Risk Percentage per Trade", minval=0.1, maxval=100, step=0.1)
 // --- Contract Size Input ---
 contractSize = input.float(1.0, title="Contract Size", tooltip="Enter the contract size as defined in your strategy input tabs")
-// --- Initial Stop Loss Percentage Below EMA200 ---
-initial_stop_loss_percent = input.float(0.03, "Initial Stop Loss Percentage Below EMA200 (%)", minval=0.0, step=0.01, tooltip="Set the initial stop loss percentage below the EMA200. Default is 0.03%.")
+// --- Stop Loss Buffer Input (applied to all stoploss calculations) ---
+stop_loss_buffer_percent = input.float(0.03, "Stop Loss Buffer (%)", minval=0.0, step=0.01, tooltip="Set the stop loss buffer percentage to be applied to the chosen EMA level for all stoploss calculations.")
+
 // --- Configurable Trading Windows (Hours + Minutes) ---
 start_hour_1   = input.int(7,  title="Start Hour for Session 1 (0-23)",  minval=0, maxval=23)
 start_minute_1 = input.int(0,  title="Start Minute for Session 1 (0-59)", minval=0, maxval=59)
@@ -167,7 +168,7 @@ var float stop_level            = na
 var bool  trailing_active       = false
 
 if (long_signal and strategy.position_size <= 0 and in_trading_window and trade_count_in_window < max_trades_per_window)
-    // Define cross conditions for 50, 100, and now 200 EMAs (wick-based check)
+    // Define cross conditions for 50, 100, and 200 EMAs (wick-based check)
     cross200 = (low <= ema200 and high >= ema200)
     cross50   = (low <= ema50 and high >= ema50)
     cross100  = (low <= ema100 and high >= ema100)
@@ -179,15 +180,15 @@ if (long_signal and strategy.position_size <= 0 and in_trading_window and trade_
     // 4. Else if the candle's wick touches the 20 EMA → use EMA50.
     // 5. Otherwise, use EMA20.
     if (cross200)
-        fixed_stop_loss_level := ema200 * (1 - initial_stop_loss_percent / 100)
+        fixed_stop_loss_level := ema200 * (1 - stop_loss_buffer_percent / 100)
     else if (cross100)
-        fixed_stop_loss_level := ema200 * (1 - initial_stop_loss_percent / 100)
+        fixed_stop_loss_level := ema200 * (1 - stop_loss_buffer_percent / 100)
     else if (cross50)
-        fixed_stop_loss_level := ema100 * (1 - initial_stop_loss_percent / 100)
+        fixed_stop_loss_level := ema100 * (1 - stop_loss_buffer_percent / 100)
     else if (low <= ema20 and high >= ema20)
-        fixed_stop_loss_level := ema50 * (1 - initial_stop_loss_percent / 100)
+        fixed_stop_loss_level := ema50 * (1 - stop_loss_buffer_percent / 100)
     else
-        fixed_stop_loss_level := ema20 * (1 - initial_stop_loss_percent / 100)
+        fixed_stop_loss_level := ema20 * (1 - stop_loss_buffer_percent / 100)
         
     trailing_stop         := fixed_stop_loss_level
     trailing_active       := false
