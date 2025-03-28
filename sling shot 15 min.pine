@@ -165,16 +165,22 @@ var float fixed_stop_loss_level = na
 var float trailing_stop         = na
 var float stop_level            = na
 var bool  trailing_active       = false
+
 if (long_signal and strategy.position_size <= 0 and in_trading_window and trade_count_in_window < max_trades_per_window)
-    // Define cross conditions for 50 and 100 EMAs (wick-based check)
+    // Define cross conditions for 50, 100, and now 200 EMAs (wick-based check)
+    cross200 = (low <= ema200 and high >= ema200)
     cross50   = (low <= ema50 and high >= ema50)
     cross100  = (low <= ema100 and high >= ema100)
+    
     // Apply stop loss rules in order:
-    // 1. If the candle crosses the 100 EMA (alone or with 50) → use EMA200.
-    // 2. Else if the candle crosses the 50 EMA → use EMA100.
-    // 3. Else if the candle's wick touches the 20 EMA → use EMA50.
-    // 4. Otherwise, use EMA20.
-    if (cross100)
+    // 1. If the candle crosses the 200 EMA → use EMA200.
+    // 2. Else if the candle crosses the 100 EMA (alone or with 50) → use EMA200.
+    // 3. Else if the candle crosses the 50 EMA → use EMA100.
+    // 4. Else if the candle's wick touches the 20 EMA → use EMA50.
+    // 5. Otherwise, use EMA20.
+    if (cross200)
+        fixed_stop_loss_level := ema200 * (1 - initial_stop_loss_percent / 100)
+    else if (cross100)
         fixed_stop_loss_level := ema200 * (1 - initial_stop_loss_percent / 100)
     else if (cross50)
         fixed_stop_loss_level := ema100 * (1 - initial_stop_loss_percent / 100)
@@ -199,6 +205,7 @@ if (long_signal and strategy.position_size <= 0 and in_trading_window and trade_
     strategy.entry("Long", strategy.long, qty=positionSize, alert_message=entryAlertMessage)
     alert(entryAlertMessage, alert.freq_once_per_bar_close)
     trade_count_in_window += 1
+
 if (strategy.position_size > 0)
     bool pa_above_entry = not na(priceActionLine) and (priceActionLine > strategy.position_avg_price)
     if (ema200 > strategy.position_avg_price)
@@ -223,6 +230,7 @@ if (strategy.position_size > 0)
             stop_level := trailing_stop
         
     strategy.exit("Stop Loss", "Long", stop=stop_level, alert_message="7766821208277,closelong," + tickerSymbol)
+    
 plot(strategy.position_size > 0 ? stop_level : na, title="Stop Loss", color=color.yellow, linewidth=2)
 var bool wasInPosition = false
 stop_triggered = wasInPosition and (strategy.position_size == 0) and (close <= stop_level)
