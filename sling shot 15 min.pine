@@ -209,12 +209,24 @@ var float fixed_stop_loss_level = na
 var float trailing_stop         = na
 var float stop_level            = na
 var bool  trailing_active       = false
-bool ema_order_15min = (ema10_15min > ema20_15min) and (ema20_15min > ema50_15min) and (ema50_15min > ema100_15min) and (ema100_15min > ema200_15min)
 if (long_signal and strategy.position_size <= 0 and in_trading_window and trade_count_in_window < max_trades_per_window)
-    if ema_order_15min
-        fixed_stop_loss_level := ema100_15min * (1 - initial_stop_loss_percent / 100)
-    else
+    // Define cross conditions for 50 and 100 EMAs (wick-based check)
+    cross50   = (low <= ema50 and high >= ema50)
+    cross100  = (low <= ema100 and high >= ema100)
+    // Apply stop loss rules in order:
+    // 1. If the candle crosses the 100 EMA (alone or with 50) → use EMA200.
+    // 2. Else if the candle crosses the 50 EMA → use EMA100.
+    // 3. Else if the candle's wick touches the 20 EMA → use EMA50.
+    // 4. Otherwise, use EMA20.
+    if (cross100)
         fixed_stop_loss_level := ema200 * (1 - initial_stop_loss_percent / 100)
+    else if (cross50)
+        fixed_stop_loss_level := ema100 * (1 - initial_stop_loss_percent / 100)
+    else if (low <= ema20 and high >= ema20)
+        fixed_stop_loss_level := ema50 * (1 - initial_stop_loss_percent / 100)
+    else
+        fixed_stop_loss_level := ema20 * (1 - initial_stop_loss_percent / 100)
+        
     trailing_stop         := fixed_stop_loss_level
     trailing_active       := false
 
