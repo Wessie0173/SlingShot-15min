@@ -1,5 +1,5 @@
 //@version=5
-strategy("Sling Shot 15min", overlay=true, pyramiding=0)
+strategy("Sling Shot 15min", overlay=true, pyramiding=0 , calc_on_every_tick=true)
 // --- Ticker Symbol Input ---
 tickerSymbol = input.string("EURNZD", title="Ticker Symbol", tooltip="Enter the ticker symbol for alerts (e.g., EURNZD, EURUSD, GBPUSD, SPX, XAUUSD)")
 // --- Alert ID Input ---
