@@ -2,6 +2,8 @@
 strategy("Sling Shot 15min", overlay=true, pyramiding=0)
 // --- Ticker Symbol Input ---
 tickerSymbol = input.string("EURNZD", title="Ticker Symbol", tooltip="Enter the ticker symbol for alerts (e.g., EURNZD, EURUSD, GBPUSD, SPX, XAUUSD)")
+// --- Alert ID Input ---
+alertID = input.string("7766821208277", title="Alert ID", tooltip="Enter the alert ID number to be used in alert messages")
 // --- Pip Size Input ---
 pipSize = input.float(0.0001, title="Pip Size", tooltip="Define the pip size based on the asset type (e.g., 0.0001 for Forex, 1 for Indices, 0.01 for Commodities)")
 // --- Position Sizing for Percentage Risk ---
@@ -201,7 +203,7 @@ if (long_signal and strategy.position_size <= 0 and in_trading_window and trade_
     volume = positionSize / contractSize
 
     pipDistance       = distanceToStopLoss / pipSize
-    entryAlertMessage = "7766821208277,buy," + tickerSymbol + ",risk=" + str.tostring(volume)
+    entryAlertMessage = alertID + ",buy," + tickerSymbol + ",risk=" + str.tostring(volume)
 
     strategy.entry("Long", strategy.long, qty=positionSize, alert_message=entryAlertMessage)
     alert(entryAlertMessage, alert.freq_once_per_bar_close)
@@ -230,7 +232,7 @@ if (strategy.position_size > 0)
         else
             stop_level := trailing_stop
         
-    strategy.exit("Stop Loss", "Long", stop=stop_level, alert_message="7766821208277,closelong," + tickerSymbol)
+    strategy.exit("Stop Loss", "Long", stop=stop_level, alert_message= alertID + ",closelong," + tickerSymbol)
     
 plot(strategy.position_size > 0 ? stop_level : na, title="Stop Loss", color=color.yellow, linewidth=2)
 var bool wasInPosition = false
